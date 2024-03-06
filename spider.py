@@ -5,12 +5,12 @@ import shutil  # 用于删除文件夹及其内容
 import time
 
 import aiohttp
+import m3u8
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-import m3u8
-
 VIDEO_FOLDER = "video"  # 视频文件夹名称
+TEMP_FOLDER = "temp"  # 临时文件夹名称
 DOWNLOADED = 0  # 已下载的片段数量
 
 
@@ -69,11 +69,13 @@ async def main(m3u8_url, filename=None):
             # 如果文件名为index，则使用时间戳作为文件名
             filename = str(int(time.time()))
 
+    cache_folder = f"{TEMP_FOLDER}/{filename}"
+
     # 确保temp和video文件夹存在
-    os.makedirs(filename, exist_ok=True)
+    os.makedirs(cache_folder, exist_ok=True)
     os.makedirs(VIDEO_FOLDER, exist_ok=True)
 
-    SEGMENT_LIST_FILE = os.path.join(filename, "file_list.txt")  # 视频片段列表文件
+    SEGMENT_LIST_FILE = os.path.join(cache_folder, "file_list.txt")  # 视频片段列表文件
 
     print(f"Start handle m3u8 file:{filename}.")
     async with aiohttp.ClientSession() as session:
@@ -121,7 +123,7 @@ async def main(m3u8_url, filename=None):
     async with aiohttp.ClientSession() as session:
         for i, segment in enumerate(playlist.segments):
             task = download_and_decrypt_segment(
-                session, cipher, segment.uri, i, tracker, filename)
+                session, cipher, segment.uri, i, tracker, cache_folder)
             tasks.append(task)
         print("Start download video segments")
         await asyncio.gather(*tasks)
@@ -134,7 +136,7 @@ async def main(m3u8_url, filename=None):
     if os.system(merge_command) == 0:
         print("Video merged successfully, start cleanup temp files.")
         # 清理temp文件夹
-        shutil.rmtree(filename)
+        shutil.rmtree(cache_folder)
         print("Temp files cleaned up.")
     else:
         print("Video merge failed.")
