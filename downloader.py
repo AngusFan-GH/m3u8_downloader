@@ -80,8 +80,13 @@ async def main(m3u8_url, filename=None):
     print(f"Start handle m3u8 file:{filename}.")
     async with aiohttp.ClientSession() as session:
         async with session.get(m3u8_url) as response:
-            m3u8_content = await response.text()
-
+            # 判断响应内容，如果是文本，则读取内容
+            if response.headers['Content-Type'] == 'application/x-mpegURL':
+                m3u8_content = await response.text()
+            else:
+                # 如果是二进制文件，则读取内容
+                m3u8_content = await response.read()
+                m3u8_content = m3u8_content.decode('utf-8')
     # 解析M3U8文件
     playlist = m3u8.loads(m3u8_content)
     if playlist.is_variant:  # 如果是主播放列表，选择第一个变体
@@ -99,6 +104,8 @@ async def main(m3u8_url, filename=None):
     # 如果存在加密密钥，设置解密器
     if is_encrypted:
         key_uri = playlist.keys[0].uri  # 获取密钥URI
+        if not key_uri.startswith("http"):
+            key_uri = make_absolute_url(base_url, key_uri)
         # 异步下载密钥
         async with aiohttp.ClientSession() as session:
             async with session.get(key_uri) as response:
@@ -122,6 +129,10 @@ async def main(m3u8_url, filename=None):
     tasks = []
     async with aiohttp.ClientSession() as session:
         for i, segment in enumerate(playlist.segments):
+            # 如果片段URI是相对路径，则转换为绝对路径
+            if not segment.uri.startswith("http"):
+                base_url = m3u8_url.rsplit('/', 1)[0] + '/'
+                segment.uri = make_absolute_url(base_url, segment.uri)
             task = download_and_decrypt_segment(
                 session, cipher, segment.uri, i, tracker, cache_folder)
             tasks.append(task)
